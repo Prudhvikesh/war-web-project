@@ -1,28 +1,50 @@
+Jenkinsfile
+
 pipeline {
     agent any
+
+    environment {
+        TOMCAT_SERVER = "65.2.145.237"
+        TOMCAT_USER = "ubuntu"
+        NEXUS_URL = "65.2.123.213:8081"
+        NEXUS_REPOSITORY = "maven-releases"
+        NEXUS_CREDENTIAL_ID = "nexus_creds"
+        SSH_KEY_PATH = "/var/lib/jenkins/.ssh/jenkins_key"
+        SONAR_HOST_URL = "http://13.201.47.214:9000"
+        SONAR_CREDENTIAL_ID = "sonar_creds"  // Replace with your SonarQube credential ID
+    }
 
     tools {
         maven "maven"
     }
 
-    environment {
-        NEXUS_VERSION = "nexus3"
-        NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "3.109.133.197:8081"
-        NEXUS_REPOSITORY = "demo-release"
-        NEXUS_CREDENTIAL_ID = "nexus_credentials"
-        ARTVERSION = "1.0.0"
-        TOMCAT_URL = "http://43.204.147.153:8080"
-        TOMCAT_CREDENTIAL_ID = "tomcat_credentials"
-        TOMCAT_USERNAME = "tomcat-user"
-        TOMCAT_PASSWORD = "secure-password" // Update this to the correct password
-    }
-
     stages {
-        stage('Build WAR') {
+                stage('Build WAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
-                archiveArtifacts artifacts: '**/target/*.war'
+                archiveArtifacts artifacts: '/target/*.war'
+            }
+        }
+stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube Server') {
+                    withCredentials([string(credentialsId: env.SONAR_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
+                        sh """
+                            mvn sonar:sonar \
+                                -Dsonar.projectKey=wwp \
+                                -Dsonar.host.url=${env.SONAR_HOST_URL} \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.java.binaries=target/classes
+                        """
+                    }
+                }
+            }
+}
+       stage('Extract Version') {
+            steps {
+                script {
+                    env.ART_VERSION = sh(script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout", returnStdout: true).trim()
+                }
             }
         }
 
@@ -30,69 +52,53 @@ pipeline {
             steps {
                 script {
                     def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
-                    if (!fileExists(warFile)) {
-                        error("WAR file not found at ${warFile}")
-                    }
                     nexusArtifactUploader(
-                        nexusVersion: "${NEXUS_VERSION}",
-                        protocol: "${NEXUS_PROTOCOL}",
+                        nexusVersion: "nexus3",
+                        protocol: "http",
                         nexusUrl: "${NEXUS_URL}",
-                        groupId: "com.example.warwebproject",
-                        version: "${ARTVERSION}",
+                        groupId: "koddas.web.war",
+                        artifactId: "wwp",
+                        version: "${ART_VERSION}",
                         repository: "${NEXUS_REPOSITORY}",
                         credentialsId: "${NEXUS_CREDENTIAL_ID}",
-                        artifacts: [
-                            [artifactId: "wwp", classifier: '', file: warFile, type: "war"],
-                            [artifactId: "wwp", classifier: '', file: "pom.xml", type: "pom"]
-                        ]
+                        artifacts: [[artifactId: "wwp", file: warFile, type: "war"]]
                     )
                 }
             }
         }
 
-        stage('Deploy WAR') {
+        stage('Deploy to Tomcat') {
             steps {
                 script {
-                    // Dynamically find the latest WAR file in the target directory
-                    def warFilePath = sh(script: "find ${workspace}/target -name '*.war' -type f -print0 | xargs -0 ls -t | head -n 1", returnStdout: true).trim()
+                    def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
+                    sh """
+                        scp -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ${warFile} ${TOMCAT_USER}@${TOMCAT_SERVER}:/tmp/
+                        ssh -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_SERVER} '
+                            sudo mv /tmp/*.war /opt/tomcat/webapps/ && sudo systemctl restart tomcat'
+                    """
+                }
+            }
+        }
 
-                    if (warFilePath) {
-                        echo "WAR file located at: ${warFilePath}"
-
-                        // Deploy the WAR file to the remote server
-                        sh """
-                            # Copy the WAR file to a temporary directory on the remote server
-                            scp -o StrictHostKeyChecking=no -i /var/lib/jenkins/.ssh/jenkins_key ${warFilePath} ubuntu@43.204.147.153:/tmp/wwp.war
-
-                            # Move the WAR file to the correct directory and restart Tomcat
-                            ssh -o StrictHostKeyChecking=no -i /var/lib/jenkins/.ssh/jenkins_key ubuntu@43.204.147.153 <<EOF
-                                set -e
-                                echo "Moving WAR file to Tomcat directory..."
-                                sudo mv /tmp/wwp.war /opt/tomcat/webapps/wwp.war
-                                echo "WAR file deployed successfully to /opt/tomcat/webapps/wwp.war"
-                                
-                                echo "Restarting Tomcat..."
-                                sudo systemctl restart tomcat
-                                echo "Tomcat restarted."
-                            EOF
-                        """
-                    } else {
-                        error "No WAR file found to deploy."
-                    }
+        stage('Display URLs') {
+            steps {
+                script {
+                    def appUrl = "http://${TOMCAT_SERVER}:8080/wwp-${ART_VERSION}"
+                    def nexusUrl = "http://${NEXUS_URL}/repository/${NEXUS_REPOSITORY}/koddas/web/war/wwp/${ART_VERSION}/wwp-${ART_VERSION}.war"
+                    
+                    echo "🌐 Application URL: ${appUrl}"
+                    echo "📦 Nexus Artifact URL: ${nexusUrl}"
                 }
             }
         }
     }
 
     post {
-        always {
-            echo 'Pipeline completed.'
-        }
         success {
-            echo 'Deployment successful!'
+            echo '✅ Pipeline completed successfully!'
         }
         failure {
-            echo 'Deployment failed. Check logs for details.'
-        }
-    }
+            echo '❌ Pipeline failed. Check the logs for errors.'
+        }
+    }
 }
