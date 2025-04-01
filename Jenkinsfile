@@ -97,6 +97,6 @@ stage('SonarQube Analysis') {
         }
         failure {
             echo 'âŒ Pipeline failed. Check the logs for errors.'
- Â Â Â Â Â Â Â }
-Â Â Â Â }
+ Â Â Â Â Â Â Â }
+Â Â Â Â }
 }
