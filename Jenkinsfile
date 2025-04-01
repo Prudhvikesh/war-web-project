@@ -97,6 +97,6 @@ stage('SonarQube Analysis') {
         }
         failure {
             echo '❌ Pipeline failed. Check the logs for errors.'
-        }
+                 }
     }
 }
