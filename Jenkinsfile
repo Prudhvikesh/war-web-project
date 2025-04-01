@@ -1,6 +1,5 @@
 pipeline {
     agent any
-
     environment {
         TOMCAT_SERVER = "13.127.29.117"
         TOMCAT_USER = "ubuntu"
