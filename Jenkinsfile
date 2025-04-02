@@ -1,13 +1,14 @@
 pipeline {
     agent any
+
     environment {
-        TOMCAT_SERVER = "13.127.29.117"
+        TOMCAT_SERVER = "3.7.251.140"
         TOMCAT_USER = "ubuntu"
-        NEXUS_URL = "52.66.196.37:8081"
+        NEXUS_URL = "3.7.248.174:8081"
         NEXUS_REPOSITORY = "maven-releases"
         NEXUS_CREDENTIAL_ID = "nexus_creds"
         SSH_KEY_PATH = "/var/lib/jenkins/.ssh/jenkins_key"
-        SONAR_HOST_URL = "http://35.154.164.0:9000/"
+        SONAR_HOST_URL = "http://13.201.125.222:9000"
         SONAR_CREDENTIAL_ID = "sonar_creds"  // Replace with your SonarQube credential ID
     }
 
@@ -19,7 +20,7 @@ pipeline {
                 stage('Build WAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
-                archiveArtifacts artifacts: '/target/*.war'
+                archiveArtifacts artifacts: '**/target/*.war'
             }
         }
 stage('SonarQube Analysis') {
@@ -97,6 +98,5 @@ stage('SonarQube Analysis') {
         failure {
             echo '❌ Pipeline failed. Check the logs for errors.'
         }
-        
-    }
+    }
 }
