@@ -2,13 +2,13 @@ pipeline {
     agent any
 
     environment {
-        TOMCAT_SERVER = "3.7.251.140"
+        TOMCAT_SERVER = "3.109.183.202"
         TOMCAT_USER = "ubuntu"
-        NEXUS_URL = "3.7.248.174:8081"
+        NEXUS_URL = "3.111.214.245:8081"
         NEXUS_REPOSITORY = "maven-releases"
         NEXUS_CREDENTIAL_ID = "nexus_creds"
         SSH_KEY_PATH = "/var/lib/jenkins/.ssh/jenkins_key"
-        SONAR_HOST_URL = "http://13.201.125.222:9000"
+        SONAR_HOST_URL = "http://3.110.130.79:9000"
         SONAR_CREDENTIAL_ID = "sonar_creds"  // Replace with your SonarQube credential ID
     }
 
@@ -20,12 +20,12 @@ pipeline {
                 stage('Build WAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
-                archiveArtifacts artifacts: '**/target/*.war'
+                archiveArtifacts artifacts: '/target/*.war'
             }
         }
 stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube Server') {
+                withSonarQubeEnv('SonarQubeServer') {
                     withCredentials([string(credentialsId: env.SONAR_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
                         sh """
                             mvn sonar:sonar \
@@ -46,24 +46,31 @@ stage('SonarQube Analysis') {
             }
         }
 
-        stage('Publish to Nexus') {
-            steps {
-                script {
-                    def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
-                    nexusArtifactUploader(
-                        nexusVersion: "nexus3",
-                        protocol: "http",
-                        nexusUrl: "${NEXUS_URL}",
-                        groupId: "koddas.web.war",
+stage('Publish to Nexus') {
+    steps {
+        script {
+            def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
+            nexusArtifactUploader(
+                nexusVersion: "nexus3",
+                protocol: "http",
+                nexusUrl: "${NEXUS_URL}",
+                groupId: "koddas.web.war",
+                version: "${ART_VERSION}",
+                repository: "${NEXUS_REPOSITORY}",
+                credentialsId: "${NEXUS_CREDENTIAL_ID}",
+                artifacts: [
+                    [
                         artifactId: "wwp",
-                        version: "${ART_VERSION}",
-                        repository: "${NEXUS_REPOSITORY}",
-                        credentialsId: "${NEXUS_CREDENTIAL_ID}",
-                        artifacts: [[artifactId: "wwp", file: warFile, type: "war"]]
-                    )
-                }
-            }
+                        classifier: '',
+                        file: warFile,
+                        type: "war"
+                    ]
+                ]
+            )
         }
+    }
+}
+
 
         stage('Deploy to Tomcat') {
             steps {
@@ -97,6 +104,6 @@ stage('SonarQube Analysis') {
         }
         failure {
             echo '❌ Pipeline failed. Check the logs for errors.'
-        }
-    }
+        }
+    }
 }
