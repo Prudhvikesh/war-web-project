@@ -2,14 +2,14 @@ pipeline {
     agent any
 
     environment {
-        TOMCAT_SERVER = "3.110.32.133"
+        TOMCAT_SERVER = "44.201.202.44"
         TOMCAT_USER = "ubuntu"
-        NEXUS_URL = "13.233.208.137:8081"
+        NEXUS_URL = "13.218.82.244:8081"
         NEXUS_REPOSITORY = "maven-releases"
         NEXUS_CREDENTIAL_ID = "nexus_creds"
         SSH_KEY_PATH = "/var/lib/jenkins/.ssh/jenkins_key"
-        SONAR_HOST_URL = "http://3.111.197.89:9000"
-        SONAR_CREDENTIAL_ID = "sonar_creds"  // Replace with your SonarQube credential ID
+        SONAR_HOST_URL = "http://18.233.164.180:9000"
+        SONAR_CREDENTIAL_ID = "sonar_creds"
     }
 
     tools {
@@ -17,13 +17,14 @@ pipeline {
     }
 
     stages {
-                stage('Build WAR') {
+        stage('Build WAR') {
             steps {
                 sh 'mvn clean package -DskipTests'
-                archiveArtifacts artifacts: '/target/*.war'
+                archiveArtifacts artifacts: 'target/*.war'
             }
         }
-stage('SonarQube Analysis') {
+
+        stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQubeServer') {
                     withCredentials([string(credentialsId: env.SONAR_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
@@ -37,45 +38,54 @@ stage('SonarQube Analysis') {
                     }
                 }
             }
-}
-       stage('Extract Version') {
+        }
+
+        stage('Extract Version') {
             steps {
                 script {
-                    env.ART_VERSION = sh(script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout", returnStdout: true).trim()
+                    env.ART_VERSION = sh(
+                        script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
+                        returnStdout: true
+                    ).trim()
                 }
             }
         }
 
-stage('Publish to Nexus') {
-    steps {
-        script {
-            def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
-            nexusArtifactUploader(
-                nexusVersion: "nexus3",
-                protocol: "http",
-                nexusUrl: "${NEXUS_URL}",
-                groupId: "koddas.web.war",
-                version: "${ART_VERSION}",
-                repository: "${NEXUS_REPOSITORY}",
-                credentialsId: "${NEXUS_CREDENTIAL_ID}",
-                artifacts: [
-                    [
-                        artifactId: "wwp",
-                        classifier: '',
-                        file: warFile,
-                        type: "war"
-                    ]
-                ]
-            )
-        }
-    }
-}
+        stage('Publish to Nexus') {
+            steps {
+                script {
+                    def warFile = sh(
+                        script: 'find target -name "*.war" -print -quit',
+                        returnStdout: true
+                    ).trim()
 
+                    nexusArtifactUploader(
+                        nexusVersion: "nexus3",
+                        protocol: "http",
+                        nexusUrl: "${NEXUS_URL}",
+                        groupId: "koddas.web.war",
+                        version: "${ART_VERSION}",
+                        repository: "${NEXUS_REPOSITORY}",
+                        credentialsId: "${NEXUS_CREDENTIAL_ID}",
+                        artifacts: [[
+                            artifactId: "wwp",
+                            classifier: '',
+                            file: warFile,
+                            type: "war"
+                        ]]
+                    )
+                }
+            }
+        }
 
         stage('Deploy to Tomcat') {
             steps {
                 script {
-                    def warFile = sh(script: 'find target -name "*.war" -print -quit', returnStdout: true).trim()
+                    def warFile = sh(
+                        script: 'find target -name "*.war" -print -quit',
+                        returnStdout: true
+                    ).trim()
+
                     sh """
                         scp -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ${warFile} ${TOMCAT_USER}@${TOMCAT_SERVER}:/tmp/
                         ssh -i ${SSH_KEY_PATH} -o StrictHostKeyChecking=no ${TOMCAT_USER}@${TOMCAT_SERVER} '
@@ -90,7 +100,7 @@ stage('Publish to Nexus') {
                 script {
                     def appUrl = "http://${TOMCAT_SERVER}:8080/wwp-${ART_VERSION}"
                     def nexusUrl = "http://${NEXUS_URL}/repository/${NEXUS_REPOSITORY}/koddas/web/war/wwp/${ART_VERSION}/wwp-${ART_VERSION}.war"
-                    
+
                     echo "🌐 Application URL: ${appUrl}"
                     echo "📦 Nexus Artifact URL: ${nexusUrl}"
                 }
@@ -104,6 +114,6 @@ stage('Publish to Nexus') {
         }
         failure {
             echo '❌ Pipeline failed. Check the logs for errors.'
-        }
-    }
+        }
+    }
 }
